@@ -1,0 +1,45 @@
+services:
+  daily:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ECONOMICS_COMMAND: daily
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+      - ./docs:/app/docs
+      - ./prompts:/app/prompts:ro
+      - wemprss-data:/we-mp-rss-data:ro
+
+  rewrite:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ECONOMICS_COMMAND: rewrite
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+      - ./docs:/app/docs
+      - ./prompts:/app/prompts:ro
+      - wemprss-data:/we-mp-rss-data:ro
+
+  apply-card:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ECONOMICS_COMMAND: apply-card
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+      - ./docs:/app/docs
+
+volumes:
+  wemprss-data:
+    external: true
+    name: ${WE_MP_RSS_DOCKER_VOLUME:-wechat_official_account_article_summary_we-mp-rss-data}
