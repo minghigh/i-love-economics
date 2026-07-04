@@ -100,9 +100,9 @@ def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[To
 
 
 def is_duplicate_topic(left: Topic, right: Topic) -> bool:
-    left_text = f"{left.title} {left.economic_question}"
-    right_text = f"{right.title} {right.economic_question}"
-    return SequenceMatcher(None, left_text, right_text).ratio() >= 0.55
+    title_ratio = SequenceMatcher(None, left.title, right.title).ratio()
+    question_ratio = SequenceMatcher(None, left.economic_question, right.economic_question).ratio()
+    return max(title_ratio, question_ratio) >= 0.55
 
 
 def source_excerpt(article: SourceArticle, main: bool) -> str:
