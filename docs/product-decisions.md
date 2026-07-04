@@ -110,6 +110,8 @@ Local model through `local-llm-gateway`:
 - Produce scores and reasons.
 - Generate cover text.
 
+Screening runs in small batches because a normal day can contain hundreds of articles.
+
 DeepSeek:
 
 - Write complete WeChat articles.

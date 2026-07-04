@@ -10,7 +10,17 @@ from zoneinfo import ZoneInfo
 
 from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
-from economics_daily.pipeline import render_wechat_html, safe_filename, validate_topic
+from economics_daily.models import SourceArticle
+from economics_daily.pipeline import render_wechat_html, safe_filename, screen_articles, validate_topic
+
+
+class FakeClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, prompt: str, temperature: float = 0.2) -> str:
+        self.calls += 1
+        return '{"topics":[{"title":"选题","pass":true,"score":8,"economic_question":"问题","core_concept":"概念","reason":"理由","source_ids":["a"]}]}'
 
 
 class PipelineTest(unittest.TestCase):
@@ -70,6 +80,24 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(topic.score, 10)
         self.assertIn("<h2", render_wechat_html("# 标题\n\n正文"))
         self.assertEqual(safe_filename('囚徒/困境'), "囚徒-困境")
+
+    def test_screening_batches_articles(self) -> None:
+        old = os.environ.get("SCREEN_BATCH_SIZE")
+        os.environ["SCREEN_BATCH_SIZE"] = "2"
+        try:
+            client = FakeClient()
+            articles = [
+                SourceArticle(str(i), "标题", "来源", "link", datetime.now(ZoneInfo("Asia/Shanghai")), "", "正文" * 50)
+                for i in range(5)
+            ]
+            topics = screen_articles(articles, client)  # type: ignore[arg-type]
+        finally:
+            if old is None:
+                os.environ.pop("SCREEN_BATCH_SIZE", None)
+            else:
+                os.environ["SCREEN_BATCH_SIZE"] = old
+        self.assertEqual(client.calls, 3)
+        self.assertEqual(len(topics), 3)
 
 
 if __name__ == "__main__":

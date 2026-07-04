@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 import shutil
 from datetime import date
@@ -49,6 +50,14 @@ def validate_topic(raw: dict) -> Topic:
 def screen_articles(articles: list[SourceArticle], client: ChatClient) -> list[Topic]:
     if not articles:
         return []
+    batch_size = int(os.environ.get("SCREEN_BATCH_SIZE", "20"))
+    topics: list[Topic] = []
+    for start in range(0, len(articles), batch_size):
+        topics.extend(_screen_batch(articles[start : start + batch_size], client))
+    return topics
+
+
+def _screen_batch(articles: list[SourceArticle], client: ChatClient) -> list[Topic]:
     body = prompt("01_screen_articles.md", articles_json=article_payload(articles))
     last_error: Exception | None = None
     for _ in range(2):
