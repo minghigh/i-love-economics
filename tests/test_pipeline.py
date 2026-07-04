@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
 from economics_daily.models import SourceArticle
-from economics_daily.pipeline import render_wechat_html, safe_filename, screen_articles, validate_topic
+from economics_daily.pipeline import render_wechat_html, safe_filename, screen_articles, select_topics, validate_topic
 
 
 class FakeClient:
@@ -98,6 +98,46 @@ class PipelineTest(unittest.TestCase):
                 os.environ["SCREEN_BATCH_SIZE"] = old
         self.assertEqual(client.calls, 3)
         self.assertEqual(len(topics), 3)
+
+    def test_select_topics_skips_near_duplicate_events(self) -> None:
+        topics = [
+            validate_topic(
+                {
+                    "title": "日本为何开始从废旧空调中提取稀土？",
+                    "pass": True,
+                    "score": 9,
+                    "economic_question": "日本为何开始回收空调稀土？",
+                    "core_concept": "资源稀缺性",
+                    "reason": "理由",
+                    "source_ids": ["a"],
+                }
+            ),
+            validate_topic(
+                {
+                    "title": "日本从废旧空调中提取稀土：资源短缺下的激励与行为分析",
+                    "pass": True,
+                    "score": 9,
+                    "economic_question": "日本为何开始回收空调稀土？",
+                    "core_concept": "资源稀缺性",
+                    "reason": "理由",
+                    "source_ids": ["b"],
+                }
+            ),
+            validate_topic(
+                {
+                    "title": "世界杯来了，电视却卖不动了",
+                    "pass": True,
+                    "score": 9,
+                    "economic_question": "智能电视为什么伤害消费者体验？",
+                    "core_concept": "消费者剩余",
+                    "reason": "理由",
+                    "source_ids": ["c"],
+                }
+            ),
+        ]
+        selected, rejected = select_topics(topics, 3)
+        self.assertEqual([topic.title for topic in selected], [topics[0].title, topics[2].title])
+        self.assertEqual([topic.title for topic in rejected], [topics[1].title])
 
 
 if __name__ == "__main__":

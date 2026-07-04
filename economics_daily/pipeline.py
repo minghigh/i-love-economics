@@ -4,6 +4,7 @@ import html
 import os
 import re
 import shutil
+from difflib import SequenceMatcher
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -86,7 +87,22 @@ def group_topics(topics: list[Topic], client: ChatClient) -> list[Topic]:
 def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[Topic]]:
     passed = [topic for topic in topics if topic.pass_]
     passed.sort(key=lambda topic: topic.score, reverse=True)
-    return passed[:limit], passed[limit:]
+    selected: list[Topic] = []
+    rejected: list[Topic] = []
+    for topic in passed:
+        if any(is_duplicate_topic(topic, item) for item in selected):
+            rejected.append(topic)
+        elif len(selected) < limit:
+            selected.append(topic)
+        else:
+            rejected.append(topic)
+    return selected, rejected
+
+
+def is_duplicate_topic(left: Topic, right: Topic) -> bool:
+    left_text = f"{left.title} {left.economic_question}"
+    right_text = f"{right.title} {right.economic_question}"
+    return SequenceMatcher(None, left_text, right_text).ratio() >= 0.55
 
 
 def source_excerpt(article: SourceArticle, main: bool) -> str:
