@@ -87,10 +87,11 @@ def group_topics(topics: list[Topic], client: ChatClient) -> list[Topic]:
 
 
 def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[Topic]]:
-    passed = [topic for topic in topics if topic.pass_]
+    min_score = int(os.environ.get("MIN_TOPIC_SCORE", "8"))
+    passed = [topic for topic in topics if topic.pass_ and topic.score >= min_score]
+    rejected = [topic for topic in topics if topic.pass_ and topic.score < min_score]
     passed.sort(key=lambda topic: topic.score, reverse=True)
     selected: list[Topic] = []
-    rejected: list[Topic] = []
     for topic in passed:
         if any(is_duplicate_topic(topic, item) for item in selected):
             rejected.append(topic)

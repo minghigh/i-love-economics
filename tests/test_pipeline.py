@@ -148,6 +148,35 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual([topic.title for topic in selected], [topics[0].title, topics[2].title])
         self.assertEqual([topic.title for topic in rejected], [topics[1].title])
 
+    def test_select_topics_rejects_weak_topics_instead_of_filling_quota(self) -> None:
+        topics = [
+            validate_topic(
+                {
+                    "title": "有细节的强选题",
+                    "pass": True,
+                    "score": 8,
+                    "economic_question": "为什么值得写？",
+                    "core_concept": "激励",
+                    "reason": "有机制",
+                    "source_ids": ["a"],
+                }
+            ),
+            validate_topic(
+                {
+                    "title": "只有常识短评的弱选题",
+                    "pass": True,
+                    "score": 7,
+                    "economic_question": "为什么不够？",
+                    "core_concept": "成本",
+                    "reason": "事实细节不足",
+                    "source_ids": ["b"],
+                }
+            ),
+        ]
+        selected, rejected = select_topics(topics, 3)
+        self.assertEqual([topic.title for topic in selected], ["有细节的强选题"])
+        self.assertEqual([topic.title for topic in rejected], ["只有常识短评的弱选题"])
+
     def test_render_home_lists_daily_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "data"
