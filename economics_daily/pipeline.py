@@ -139,7 +139,7 @@ def write_candidate(base: Path, index: int, topic: Topic, sources: list[dict], c
     article = client.complete(article_prompt, temperature=0.6)
     write_text(cdir / "article.md", article)
     write_text(cdir / "article.html", render_wechat_html(article))
-    write_cover(cdir / "cover.png", topic.title)
+    write_cover(cdir / "cover.png", topic.title, footer=topic.core_concept)
     card_prompt = prompt("04_make_knowledge_card.md", article=article, selected_topic=topic.to_json(), sources=sources)
     write_text(cdir / "knowledge-card.patch.md", client.complete(card_prompt, temperature=0.2))
     check_prompt = prompt("06_fact_check_article.md", article=article, sources=sources)
@@ -176,7 +176,7 @@ def render_inline(text: str) -> str:
     return re.sub(r"\*\*(.+?)\*\*", r'<strong style="color:#8a1c1c;background:#fff3d8;padding:0 .12em;">\1</strong>', escaped)
 
 
-def write_cover(path: Path, title: str, column: str = "用经济学看昨天", footer: str = "资源稀缺性 · 替代性资源开发") -> None:
+def write_cover(path: Path, title: str, column: str = "用经济学看昨天", footer: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", (900, 500), "#16141a")
     draw = ImageDraw.Draw(image)
@@ -229,7 +229,7 @@ def write_cover(path: Path, title: str, column: str = "用经济学看昨天", f
 
     draw.multiline_text((90, 178), wrapped_title, fill="#fff8e7", font=title_font, spacing=0)
     draw.rectangle((90, 396, 520, 400), fill="#f0c76a")
-    draw.text((90, 416), footer, fill="#fff8e7", font=footer_font)
+    draw.text((90, 416), footer or "经济学视角", fill="#fff8e7", font=footer_font)
     image.save(path)
 
 
@@ -395,7 +395,7 @@ def rewrite_candidate(candidate_dir: Path) -> None:
     article = deepseek_client().complete(prompt("03_write_wechat_article.md", selected_topic=topic.to_json(), sources=sources), temperature=0.6)
     write_text(candidate_dir / "article.md", article)
     write_text(candidate_dir / "article.html", render_wechat_html(article))
-    write_cover(candidate_dir / "cover.png", topic.title)
+    write_cover(candidate_dir / "cover.png", topic.title, footer=topic.core_concept)
 
 
 def apply_card(candidate_dir: Path) -> Path:

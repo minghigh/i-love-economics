@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
 from economics_daily.models import SourceArticle
-from economics_daily.pipeline import render_home, render_wechat_html, safe_filename, screen_articles, select_topics, validate_topic, write_cover
+from economics_daily.pipeline import render_home, render_wechat_html, rewrite_candidate, safe_filename, screen_articles, select_topics, validate_topic, write_cover
 from economics_daily.wechat import _json_payload, add_day_drafts, build_draft_article
 
 
@@ -199,6 +199,23 @@ class PipelineTest(unittest.TestCase):
             path = Path(tmp) / "cover.png"
             write_cover(path, "World Cup arrived but television sales still collapsed", column="Daily", footer="Concept")
             self.assertGreater(path.stat().st_size, 1000)
+
+    def test_rewrite_cover_uses_current_topic_concept(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cdir = Path(tmp)
+            (cdir / "topic.json").write_text(
+                '{"title":"标题","pass":true,"score":9,"economic_question":"问题","core_concept":"外部性与责任归属","reason":"理由","source_ids":["a"]}',
+                encoding="utf-8",
+            )
+            (cdir / "sources.json").write_text("[]", encoding="utf-8")
+            with (
+                patch("economics_daily.pipeline.deepseek_client") as client,
+                patch("economics_daily.pipeline.write_cover") as write_cover_mock,
+            ):
+                client.return_value.complete.return_value = "正文"
+                rewrite_candidate(cdir)
+
+        write_cover_mock.assert_called_once_with(cdir / "cover.png", "标题", footer="外部性与责任归属")
 
     def test_builds_wechat_draft_payload_from_candidate_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
