@@ -79,10 +79,12 @@ class PipelineTest(unittest.TestCase):
             }
         )
         self.assertEqual(topic.score, 10)
-        rendered = render_wechat_html("# 标题\n\n**正文**")
+        rendered = render_wechat_html("# 标题\n\n**正文**\n\n---")
         self.assertIn('<meta charset="utf-8">', rendered)
         self.assertIn("<h2", rendered)
-        self.assertIn("<strong>正文</strong>", rendered)
+        self.assertIn('<strong style="color:#8a1c1c;background:#fff3d8;padding:0 .12em;">正文</strong>', rendered)
+        self.assertIn("border-top:1px solid #e5e7eb", rendered)
+        self.assertNotIn("<p style=\"margin:0 0 1em;\">---</p>", rendered)
         self.assertIn("本文由 AI 辅助生成", rendered)
         self.assertIn("font-size:12px", rendered)
         self.assertEqual(safe_filename('囚徒/困境'), "囚徒-困境")
@@ -181,7 +183,7 @@ class PipelineTest(unittest.TestCase):
 
             article = build_draft_article(cdir, "thumb")
 
-        self.assertLessEqual(len(article["title"].encode("utf-8")), 32)
+        self.assertEqual(article["title"], "这是一个非常非常非常非常长的标题")
         self.assertEqual(article["thumb_media_id"], "thumb")
         self.assertLessEqual(len(article["digest"].encode("utf-8")), 54)
         self.assertEqual(article["content"], "<section>正文</section>")

@@ -11,7 +11,6 @@ import requests
 from .io import read_json, read_text, write_json
 
 API = "https://api.weixin.qq.com/cgi-bin"
-MAX_TITLE_BYTES = 32
 MAX_DIGEST_BYTES = 54
 MAX_AUTHOR_BYTES = 8
 
@@ -87,7 +86,7 @@ def build_draft_article(candidate_dir: Path, thumb_media_id: str) -> dict[str, A
     content = read_text(candidate_dir / "article.html").replace('<meta charset="utf-8">', "").strip()
     digest = _fit_bytes(str(topic.get("economic_question") or topic.get("reason") or ""), MAX_DIGEST_BYTES)
     article = {
-        "title": _fit_bytes(str(topic["title"]), MAX_TITLE_BYTES),
+        "title": str(topic["title"]).strip(),
         "thumb_media_id": thumb_media_id,
         "digest": digest,
         "show_cover_pic": 1,

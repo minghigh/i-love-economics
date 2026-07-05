@@ -156,7 +156,9 @@ def render_wechat_html(markdown: str) -> str:
         text = line.strip()
         if not text:
             continue
-        if text.startswith("#"):
+        if re.fullmatch(r"[-*_]{3,}", text):
+            out.append('<section style="margin:1.8em 0;border-top:1px solid #e5e7eb;height:0;line-height:0;"></section>')
+        elif text.startswith("#"):
             title = render_inline(text.lstrip("#").strip())
             out.append(f'<h2 style="font-size:18px;line-height:1.5;margin:1.7em 0 .8em;color:#111;">{title}</h2>')
         elif re.match(r"^[-*]\s+", text):
@@ -170,7 +172,7 @@ def render_wechat_html(markdown: str) -> str:
 
 def render_inline(text: str) -> str:
     escaped = html.escape(text)
-    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    return re.sub(r"\*\*(.+?)\*\*", r'<strong style="color:#8a1c1c;background:#fff3d8;padding:0 .12em;">\1</strong>', escaped)
 
 
 def write_cover(path: Path, title: str, column: str = "用经济学看昨天", footer: str = "资源稀缺性 · 替代性资源开发") -> None:
