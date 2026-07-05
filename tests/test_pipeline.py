@@ -172,7 +172,7 @@ class PipelineTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cdir = Path(tmp)
             (cdir / "topic.json").write_text(
-                '{"title":"标题","economic_question":"摘要","reason":"理由"}',
+                '{"title":"这是一个非常非常非常非常长的标题","economic_question":"这是一个非常非常非常非常长的摘要","reason":"理由"}',
                 encoding="utf-8",
             )
             (cdir / "sources.json").write_text('[{"link":"https://example.com"}]', encoding="utf-8")
@@ -181,9 +181,9 @@ class PipelineTest(unittest.TestCase):
 
             article = build_draft_article(cdir, "thumb")
 
-        self.assertEqual(article["title"], "标题")
+        self.assertLessEqual(len(article["title"].encode("utf-8")), 32)
         self.assertEqual(article["thumb_media_id"], "thumb")
-        self.assertEqual(article["digest"], "摘要")
+        self.assertLessEqual(len(article["digest"].encode("utf-8")), 54)
         self.assertEqual(article["content"], "<section>正文</section>")
 
 

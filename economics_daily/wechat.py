@@ -10,6 +10,9 @@ import requests
 from .io import read_json, read_text, write_json
 
 API = "https://api.weixin.qq.com/cgi-bin"
+MAX_TITLE_BYTES = 32
+MAX_DIGEST_BYTES = 54
+MAX_AUTHOR_BYTES = 8
 
 
 class WeChatAPIError(RuntimeError):
@@ -28,6 +31,18 @@ def _json(response: requests.Response) -> dict[str, Any]:
     if data.get("errcode", 0) != 0:
         raise WeChatAPIError(str(data))
     return data
+
+
+def _fit_bytes(value: str, limit: int) -> str:
+    value = value.strip()
+    if len(value.encode("utf-8")) <= limit:
+        return value
+    out = ""
+    for char in value:
+        if len((out + char + "...").encode("utf-8")) > limit:
+            return out.rstrip("，。！？；：、 ") + "..."
+        out += char
+    return out
 
 
 def get_access_token() -> str:
@@ -65,11 +80,10 @@ def build_draft_article(candidate_dir: Path, thumb_media_id: str) -> dict[str, A
     topic = read_json(candidate_dir / "topic.json")
     sources = read_json(candidate_dir / "sources.json") if (candidate_dir / "sources.json").exists() else []
     content = read_text(candidate_dir / "article.html").replace('<meta charset="utf-8">', "").strip()
-    digest = str(topic.get("economic_question") or topic.get("reason") or "")[:120]
-    return {
-        "title": str(topic["title"]),
+    digest = _fit_bytes(str(topic.get("economic_question") or topic.get("reason") or ""), MAX_DIGEST_BYTES)
+    article = {
+        "title": _fit_bytes(str(topic["title"]), MAX_TITLE_BYTES),
         "thumb_media_id": thumb_media_id,
-        "author": os.environ.get("WECHAT_AUTHOR", "用经济学看昨天"),
         "digest": digest,
         "show_cover_pic": 1,
         "content": content,
@@ -77,6 +91,10 @@ def build_draft_article(candidate_dir: Path, thumb_media_id: str) -> dict[str, A
         "need_open_comment": 0,
         "only_fans_can_comment": 0,
     }
+    author = os.environ.get("WECHAT_AUTHOR", "")
+    if author and len(author.encode("utf-8")) <= MAX_AUTHOR_BYTES:
+        article["author"] = author
+    return article
 
 
 def add_draft(candidate_dir: Path) -> Path:
