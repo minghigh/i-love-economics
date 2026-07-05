@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,10 @@ def _json(response: requests.Response) -> dict[str, Any]:
     if data.get("errcode", 0) != 0:
         raise WeChatAPIError(str(data))
     return data
+
+
+def _json_payload(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False).encode("utf-8")
 
 
 def _fit_bytes(value: str, limit: int) -> str:
@@ -106,7 +111,8 @@ def add_draft(candidate_dir: Path) -> Path:
         requests.post(
             f"{API}/draft/add",
             params={"access_token": access_token},
-            json={"articles": [article]},
+            data=_json_payload({"articles": [article]}),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             timeout=60,
         )
     )
