@@ -83,6 +83,8 @@ class PipelineTest(unittest.TestCase):
         self.assertIn('<meta charset="utf-8">', rendered)
         self.assertIn("<h2", rendered)
         self.assertIn("<strong>正文</strong>", rendered)
+        self.assertIn("本文由 AI 辅助生成", rendered)
+        self.assertIn("font-size:12px", rendered)
         self.assertEqual(safe_filename('囚徒/困境'), "囚徒-困境")
 
     def test_screening_batches_articles(self) -> None:

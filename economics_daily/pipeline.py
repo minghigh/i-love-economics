@@ -16,6 +16,8 @@ from .io import read_json, read_text, run_dir, write_json, write_text
 from .llm import ChatClient, deepseek_client, local_client, parse_json_response, prompt
 from .models import SourceArticle, Topic
 
+AI_DISCLOSURE = "本文由 AI 辅助生成，用于经济学学习与讨论；事实信息以参考来源为准。"
+
 
 def article_payload(articles: Iterable[SourceArticle], max_chars: int = 1200) -> list[dict]:
     return [
@@ -161,6 +163,7 @@ def render_wechat_html(markdown: str) -> str:
             out.append(f'<p style="margin:0 0 .7em;padding-left:1em;">• {render_inline(text[2:].strip())}</p>')
         else:
             out.append(f'<p style="margin:0 0 1em;">{render_inline(text)}</p>')
+    out.append(f'<p style="margin:2em 0 0;font-size:12px;line-height:1.7;color:#888;">{AI_DISCLOSURE}</p>')
     out.append("</section>")
     return "\n".join(out)
 
