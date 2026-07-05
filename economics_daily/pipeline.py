@@ -149,43 +149,122 @@ def write_candidate(base: Path, index: int, topic: Topic, sources: list[dict], c
 
 def render_wechat_html(markdown: str) -> str:
     lines = markdown.splitlines()
-    out = ['<section style="font-size:16px;line-height:1.85;color:#222;">']
+    out = ['<meta charset="utf-8">', '<section style="font-size:16px;line-height:1.85;color:#222;">']
     for line in lines:
         text = line.strip()
         if not text:
             continue
         if text.startswith("#"):
-            title = html.escape(text.lstrip("#").strip())
+            title = render_inline(text.lstrip("#").strip())
             out.append(f'<h2 style="font-size:18px;line-height:1.5;margin:1.7em 0 .8em;color:#111;">{title}</h2>')
         elif re.match(r"^[-*]\s+", text):
-            out.append(f'<p style="margin:0 0 .7em;padding-left:1em;">• {html.escape(text[2:].strip())}</p>')
+            out.append(f'<p style="margin:0 0 .7em;padding-left:1em;">• {render_inline(text[2:].strip())}</p>')
         else:
-            out.append(f'<p style="margin:0 0 1em;">{html.escape(text)}</p>')
+            out.append(f'<p style="margin:0 0 1em;">{render_inline(text)}</p>')
     out.append("</section>")
     return "\n".join(out)
 
 
-def write_cover(path: Path, title: str, column: str = "用经济学看昨天") -> None:
+def render_inline(text: str) -> str:
+    escaped = html.escape(text)
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+
+def write_cover(path: Path, title: str, column: str = "用经济学看昨天", footer: str = "资源稀缺性 · 替代性资源开发") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    image = Image.new("RGB", (900, 500), "#f5f1e8")
+    image = Image.new("RGB", (900, 500), "#16141a")
     draw = ImageDraw.Draw(image)
     try:
-        font_path = "/System/Library/Fonts/PingFang.ttc"
-        if not Path(font_path).exists():
-            font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-        title_font = ImageFont.truetype(font_path, 46)
-        small_font = ImageFont.truetype(font_path, 26)
+        serif = first_existing_font(
+            [
+                "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSerifCJK-SemiBold.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+                "/System/Library/Fonts/Supplemental/Songti.ttc",
+                "/System/Library/Fonts/PingFang.ttc",
+            ]
+        )
+        sans = first_existing_font(
+            [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/System/Library/Fonts/PingFang.ttc",
+            ]
+        )
+        title_font, wrapped_title = fit_cover_title(draw, title, serif, 730, 188)
+        small_font = ImageFont.truetype(sans, 34)
+        footer_font = ImageFont.truetype(sans, 28)
+        tiny_font = ImageFont.truetype(sans, 20)
     except OSError:
         title_font = ImageFont.load_default()
+        wrapped_title = wrap_title(title, 12)
         small_font = ImageFont.load_default()
-    draw.text((70, 64), column, fill="#8a4b2a", font=small_font)
-    wrapped = wrap_title(title, 15)
-    draw.multiline_text((70, 170), wrapped, fill="#1f2933", font=title_font, spacing=14)
+        footer_font = ImageFont.load_default()
+        tiny_font = ImageFont.load_default()
+    for y in range(500):
+        t = y / 499
+        r = int(34 + 112 * t)
+        g = int(20 + 8 * t)
+        b = int(28 + 6 * t)
+        draw.line((0, y, 900, y), fill=(r, g, b))
+    for x in range(900):
+        t = x / 899
+        draw.line((x, 0, x, 500), fill=(int(12 + 45 * t), 14, int(24 + 18 * t)), width=1)
+
+    draw.ellipse((560, -120, 1040, 360), fill="#a3262d")
+    draw.ellipse((610, -70, 980, 300), outline="#d9a441", width=4)
+    draw.rectangle((46, 44, 854, 456), outline="#f0c76a", width=4)
+    draw.rectangle((70, 70, 830, 430), outline="#71343b", width=2)
+
+    draw.rounded_rectangle((92, 74, 360, 134), radius=0, fill="#f0c76a")
+    draw.text((112, 82), column, fill="#351018", font=small_font)
+    draw.text((92, 152), "DAILY ECONOMICS", fill="#f0c76a", font=tiny_font)
+
+    draw.multiline_text((90, 178), wrapped_title, fill="#fff8e7", font=title_font, spacing=0)
+    draw.rectangle((90, 396, 520, 400), fill="#f0c76a")
+    draw.text((90, 416), footer, fill="#fff8e7", font=footer_font)
     image.save(path)
+
+
+def first_existing_font(paths: list[str]) -> str:
+    for path in paths:
+        if Path(path).exists():
+            return path
+    return paths[-1]
 
 
 def wrap_title(title: str, width: int) -> str:
     return "\n".join(title[i : i + width] for i in range(0, len(title), width))
+
+
+def wrap_title_pixels(draw: ImageDraw.ImageDraw, title: str, font: ImageFont.ImageFont, max_width: int, max_lines: int) -> str:
+    lines: list[str] = []
+    line = ""
+    for char in title:
+        candidate = line + char
+        if char in "，。！？；：、" or draw.textlength(candidate, font=font) <= max_width:
+            line = candidate
+            continue
+        lines.append(line)
+        if len(lines) == max_lines:
+            lines[-1] = lines[-1].rstrip("，。！？；：、") + "..."
+            return "\n".join(lines)
+        line = char
+    if line:
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def fit_cover_title(draw: ImageDraw.ImageDraw, title: str, font_path: str, max_width: int, max_height: int) -> tuple[ImageFont.FreeTypeFont, str]:
+    for size in range(78, 43, -2):
+        font = ImageFont.truetype(font_path, size)
+        wrapped = wrap_title_pixels(draw, title, font, max_width, 4)
+        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=0)
+        if bbox[2] <= max_width and bbox[3] - bbox[1] <= max_height:
+            return font, wrapped
+    font = ImageFont.truetype(font_path, 44)
+    return font, wrap_title_pixels(draw, title, font, max_width, 4)
 
 
 def render_index(base: Path) -> None:
@@ -229,6 +308,47 @@ a{{color:#2563eb}}
     write_text(base / "index.html", page)
 
 
+def render_home(data_dir: Path = Path("data")) -> None:
+    runs = []
+    for rdir in sorted((data_dir / "runs").glob("*"), reverse=True):
+        if not rdir.is_dir():
+            continue
+        topics = read_json(rdir / "topics.json") if (rdir / "topics.json").exists() else []
+        articles = read_json(rdir / "articles.json") if (rdir / "articles.json").exists() else []
+        statuses = []
+        for cdir in sorted((rdir / "candidates").glob("*")):
+            check = read_json(cdir / "fact_check.json") if (cdir / "fact_check.json").exists() else {}
+            statuses.append(str(check.get("status") or ("passed" if check.get("ok") else "risky")))
+        runs.append((rdir.name, topics, articles, statuses))
+
+    rows = []
+    for day, topics, articles, statuses in runs:
+        passed = statuses.count("passed")
+        titles = "".join(f"<li>{html.escape(str(topic.get('title', '未命名选题')))}</li>" for topic in topics)
+        rows.append(
+            f"""
+            <article class="card">
+              <h2><a href="runs/{day}/index.html">{day}</a></h2>
+              <p>{len(articles)} 篇原文 · {len(topics)} 个候选 · {passed}/{len(statuses)} 事实校验通过</p>
+              <ol>{titles}</ol>
+            </article>
+            """
+        )
+
+    page = f"""<!doctype html>
+<meta charset="utf-8">
+<title>每日文章情况</title>
+<style>
+body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:32px;line-height:1.6;color:#222;background:#fafafa}}
+.card{{background:white;border:1px solid #ddd;border-radius:8px;padding:18px;margin:0 0 18px;max-width:900px}}
+h1,h2{{line-height:1.3}} a{{color:#2563eb}}
+</style>
+<h1>每日文章情况</h1>
+{"".join(rows) if rows else "<p>还没有生成日报。</p>"}
+"""
+    write_text(data_dir / "index.html", page)
+
+
 def run_daily(target_date: date, force: bool, limit: int) -> None:
     base = run_dir(target_date)
     if base.exists():
@@ -245,6 +365,7 @@ def run_daily(target_date: date, force: bool, limit: int) -> None:
     except Exception as exc:  # noqa: BLE001
         write_json(base / "screening.json", {"error": str(exc), "topics": []})
         render_index(base)
+        render_home()
         return
     selected, rejected = select_topics(grouped, limit)
     write_json(base / "screening.json", [topic.to_json() for topic in screened])
@@ -255,6 +376,7 @@ def run_daily(target_date: date, force: bool, limit: int) -> None:
     render_index(base)
     log_lines.append(f"generated {len(selected)} candidates")
     write_text(base / "run.log", "\n".join(log_lines) + "\n")
+    render_home()
 
 
 def rewrite_candidate(candidate_dir: Path) -> None:

@@ -53,6 +53,7 @@ docker compose run --rm daily --date 2026-07-04 --force
 每次运行生成：
 
 ```text
+data/index.html
 data/runs/YYYY-MM-DD/
   index.html
   articles.json
@@ -75,6 +76,12 @@ data/runs/YYYY-MM-DD/
 
 ```bash
 data/runs/YYYY-MM-DD/index.html
+```
+
+打开总览页查看每天的文章情况：
+
+```bash
+data/index.html
 ```
 
 ## 发布流程

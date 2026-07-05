@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
 from economics_daily.models import SourceArticle
-from economics_daily.pipeline import render_wechat_html, safe_filename, screen_articles, select_topics, validate_topic
+from economics_daily.pipeline import render_home, render_wechat_html, safe_filename, screen_articles, select_topics, validate_topic, write_cover
 
 
 class FakeClient:
@@ -78,7 +78,10 @@ class PipelineTest(unittest.TestCase):
             }
         )
         self.assertEqual(topic.score, 10)
-        self.assertIn("<h2", render_wechat_html("# 标题\n\n正文"))
+        rendered = render_wechat_html("# 标题\n\n**正文**")
+        self.assertIn('<meta charset="utf-8">', rendered)
+        self.assertIn("<h2", rendered)
+        self.assertIn("<strong>正文</strong>", rendered)
         self.assertEqual(safe_filename('囚徒/困境'), "囚徒-困境")
 
     def test_screening_batches_articles(self) -> None:
@@ -138,6 +141,29 @@ class PipelineTest(unittest.TestCase):
         selected, rejected = select_topics(topics, 3)
         self.assertEqual([topic.title for topic in selected], [topics[0].title, topics[2].title])
         self.assertEqual([topic.title for topic in rejected], [topics[1].title])
+
+    def test_render_home_lists_daily_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            run = root / "runs" / "2026-07-04"
+            candidate = run / "candidates" / "01"
+            candidate.mkdir(parents=True)
+            (run / "articles.json").write_text('[{"title":"原文"}]', encoding="utf-8")
+            (run / "topics.json").write_text('[{"title":"候选标题"}]', encoding="utf-8")
+            (candidate / "fact_check.json").write_text('{"status":"passed"}', encoding="utf-8")
+
+            render_home(root)
+
+            page = (root / "index.html").read_text(encoding="utf-8")
+            self.assertIn("2026-07-04", page)
+            self.assertIn("候选标题", page)
+            self.assertIn('href="runs/2026-07-04/index.html"', page)
+
+    def test_cover_generation_handles_long_titles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cover.png"
+            write_cover(path, "World Cup arrived but television sales still collapsed", column="Daily", footer="Concept")
+            self.assertGreater(path.stat().st_size, 1000)
 
 
 if __name__ == "__main__":
