@@ -5,6 +5,7 @@ from pathlib import Path
 from .io import parse_target_date
 from .pipeline import apply_card as apply_card_impl
 from .pipeline import rewrite_candidate, run_daily
+from .wechat import WeChatAPIError, add_draft
 
 
 def daily(date_value: str, force: bool, limit: int) -> None:
@@ -17,4 +18,12 @@ def rewrite(candidate_dir: str) -> None:
 
 def apply_card(candidate_dir: str) -> None:
     path = apply_card_impl(Path(candidate_dir))
+    print(path)
+
+
+def draft(candidate_dir: str) -> None:
+    try:
+        path = add_draft(Path(candidate_dir))
+    except WeChatAPIError as exc:
+        raise SystemExit(str(exc)) from exc
     print(path)

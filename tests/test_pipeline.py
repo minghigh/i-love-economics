@@ -12,6 +12,7 @@ from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
 from economics_daily.models import SourceArticle
 from economics_daily.pipeline import render_home, render_wechat_html, safe_filename, screen_articles, select_topics, validate_topic, write_cover
+from economics_daily.wechat import build_draft_article
 
 
 class FakeClient:
@@ -164,6 +165,24 @@ class PipelineTest(unittest.TestCase):
             path = Path(tmp) / "cover.png"
             write_cover(path, "World Cup arrived but television sales still collapsed", column="Daily", footer="Concept")
             self.assertGreater(path.stat().st_size, 1000)
+
+    def test_builds_wechat_draft_payload_from_candidate_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cdir = Path(tmp)
+            (cdir / "topic.json").write_text(
+                '{"title":"标题","economic_question":"摘要","reason":"理由"}',
+                encoding="utf-8",
+            )
+            (cdir / "sources.json").write_text('[{"link":"https://example.com"}]', encoding="utf-8")
+            (cdir / "article.html").write_text('<meta charset="utf-8">\n<section>正文</section>', encoding="utf-8")
+            (cdir / "cover.png").write_bytes(b"cover")
+
+            article = build_draft_article(cdir, "thumb")
+
+        self.assertEqual(article["title"], "标题")
+        self.assertEqual(article["thumb_media_id"], "thumb")
+        self.assertEqual(article["digest"], "摘要")
+        self.assertEqual(article["content"], "<section>正文</section>")
 
 
 if __name__ == "__main__":

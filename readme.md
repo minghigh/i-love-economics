@@ -88,11 +88,24 @@ data/index.html
 
 1. 打开当天 `index.html`。
 2. 选择一篇候选。
-3. 打开对应 `article.html`，复制到微信公众号编辑器。
-4. 上传对应 `cover.png`。
-5. 检查 `fact_check.json`，确认事实校验状态。
-6. 人工发布。
-7. 发布后再应用知识卡片。
+3. 检查 `fact_check.json`，确认事实校验状态。
+4. 推送到公众号草稿箱。
+5. 在公众号后台人工预览、修改、发布。
+6. 发布后再应用知识卡片。
+
+推送草稿箱：
+
+```bash
+docker compose run --rm draft data/runs/YYYY-MM-DD/candidates/01
+```
+
+成功后会写入：
+
+```text
+data/runs/YYYY-MM-DD/candidates/01/wechat-draft.json
+```
+
+需要先在 251 的 `.env` 配好 `WECHAT_APPID`、`WECHAT_APPSECRET`，并把 251 的出口 IP 加到公众号后台 IP 白名单。
 
 应用知识卡片：
 

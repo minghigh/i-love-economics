@@ -6,14 +6,14 @@ import sys
 
 from dotenv import load_dotenv
 
-from .commands import apply_card, daily, rewrite
+from .commands import apply_card, daily, draft, rewrite
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = list(sys.argv[1:] if argv is None else argv)
     command = os.environ.get("ECONOMICS_COMMAND")
-    if command and (not args or args[0] not in {"daily", "rewrite", "apply-card"}):
+    if command and (not args or args[0] not in {"daily", "rewrite", "apply-card", "draft"}):
         args.insert(0, command)
     elif not args or args[0].startswith("-"):
         args.insert(0, "daily")
@@ -32,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     card_parser = sub.add_parser("apply-card")
     card_parser.add_argument("candidate_dir")
 
+    draft_parser = sub.add_parser("draft")
+    draft_parser.add_argument("candidate_dir")
+
     ns = parser.parse_args(args)
     if ns.command == "daily":
         daily(ns.date, ns.force, ns.limit)
@@ -39,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         rewrite(ns.candidate_dir)
     elif ns.command == "apply-card":
         apply_card(ns.candidate_dir)
+    elif ns.command == "draft":
+        draft(ns.candidate_dir)
     return 0
 
 
