@@ -50,6 +50,17 @@ services:
     volumes:
       - ./data:/app/data
 
+  draft-day:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ECONOMICS_COMMAND: draft-day
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+
 volumes:
   wemprss-data:
     external: true

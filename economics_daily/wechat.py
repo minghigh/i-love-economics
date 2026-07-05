@@ -125,3 +125,14 @@ def add_draft(candidate_dir: Path) -> Path:
         },
     )
     return out
+
+
+def add_day_drafts(day_dir: Path) -> list[Path]:
+    out: list[Path] = []
+    for candidate_dir in sorted((day_dir / "candidates").glob("*")):
+        draft_file = candidate_dir / "wechat-draft.json"
+        if draft_file.exists():
+            out.append(draft_file)
+            continue
+        out.append(add_draft(candidate_dir))
+    return out

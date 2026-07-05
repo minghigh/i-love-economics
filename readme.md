@@ -99,6 +99,12 @@ data/index.html
 docker compose run --rm draft data/runs/YYYY-MM-DD/candidates/01
 ```
 
+推送当天全部候选到草稿箱：
+
+```bash
+docker compose run --rm draft-day data/runs/YYYY-MM-DD
+```
+
 成功后会写入：
 
 ```text

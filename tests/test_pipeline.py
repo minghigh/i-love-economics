@@ -6,13 +6,14 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
 from economics_daily.models import SourceArticle
 from economics_daily.pipeline import render_home, render_wechat_html, safe_filename, screen_articles, select_topics, validate_topic, write_cover
-from economics_daily.wechat import _json_payload, build_draft_article
+from economics_daily.wechat import _json_payload, add_day_drafts, build_draft_article
 
 
 class FakeClient:
@@ -192,6 +193,20 @@ class PipelineTest(unittest.TestCase):
         payload = _json_payload({"title": "日本为何开始从废旧空调中提取稀土？"})
         self.assertIn("日本为何".encode("utf-8"), payload)
         self.assertNotIn(b"\\u65e5", payload)
+
+    def test_draft_day_skips_existing_drafts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            day = Path(tmp)
+            existing = day / "candidates" / "01"
+            fresh = day / "candidates" / "02"
+            existing.mkdir(parents=True)
+            fresh.mkdir(parents=True)
+            (existing / "wechat-draft.json").write_text("{}", encoding="utf-8")
+            with patch("economics_daily.wechat.add_draft", return_value=fresh / "wechat-draft.json") as add_draft:
+                paths = add_day_drafts(day)
+
+        self.assertEqual(paths, [existing / "wechat-draft.json", fresh / "wechat-draft.json"])
+        add_draft.assert_called_once_with(fresh)
 
 
 if __name__ == "__main__":
