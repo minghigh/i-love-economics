@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     draft_parser.add_argument("candidate_dir")
 
     draft_day_parser = sub.add_parser("draft-day")
-    draft_day_parser.add_argument("day_dir")
+    draft_day_parser.add_argument("day")
 
     ns = parser.parse_args(args)
     if ns.command == "daily":
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     elif ns.command == "draft":
         draft(ns.candidate_dir)
     elif ns.command == "draft-day":
-        draft_day(ns.day_dir)
+        draft_day(ns.day)
     return 0
 
 

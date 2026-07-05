@@ -103,6 +103,7 @@ docker compose run --rm draft data/runs/YYYY-MM-DD/candidates/01
 
 ```bash
 docker compose run --rm draft-day data/runs/YYYY-MM-DD
+docker compose run --rm draft-day yesterday
 ```
 
 成功后会写入：
