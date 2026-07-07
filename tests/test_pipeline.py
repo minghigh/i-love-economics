@@ -12,16 +12,19 @@ from zoneinfo import ZoneInfo
 from economics_daily.articles import load_articles
 from economics_daily.io import parse_target_date
 from economics_daily.models import SourceArticle
-from economics_daily.pipeline import render_home, render_wechat_html, rewrite_candidate, safe_filename, screen_articles, select_topics, validate_topic, write_cover
+from economics_daily.pipeline import build_event_brief, render_home, render_wechat_html, rewrite_candidate, safe_filename, screen_articles, select_topics, validate_topic, write_cover
 from economics_daily.wechat import _json_payload, add_day_drafts, build_draft_article
 
 
 class FakeClient:
     def __init__(self) -> None:
         self.calls = 0
+        self.responses: list[str] = []
 
     def complete(self, prompt: str, temperature: float = 0.2) -> str:
         self.calls += 1
+        if self.responses:
+            return self.responses.pop(0)
         return '{"topics":[{"title":"选题","pass":true,"score":8,"economic_question":"问题","core_concept":"概念","reason":"理由","source_ids":["a"]}]}'
 
 
@@ -86,7 +89,7 @@ class PipelineTest(unittest.TestCase):
         self.assertIn('<strong style="color:#8a1c1c;background:#fff3d8;padding:0 .12em;">正文</strong>', rendered)
         self.assertIn("border-top:1px solid #e5e7eb", rendered)
         self.assertNotIn("<p style=\"margin:0 0 1em;\">---</p>", rendered)
-        self.assertIn("本文由 AI 辅助生成", rendered)
+        self.assertIn("事实表述经检索核实", rendered)
         self.assertIn("font-size:12px", rendered)
         self.assertEqual(safe_filename('囚徒/困境'), "囚徒-困境")
 
@@ -177,6 +180,36 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual([topic.title for topic in selected], ["有细节的强选题"])
         self.assertEqual([topic.title for topic in rejected], ["只有常识短评的弱选题"])
 
+    def test_build_event_brief_writes_verification_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cdir = Path(tmp)
+            topic = validate_topic(
+                {
+                    "title": "海洋热浪",
+                    "pass": True,
+                    "score": 9,
+                    "economic_question": "气候冲击如何改变预期？",
+                    "core_concept": "外部性",
+                    "reason": "理由",
+                    "source_ids": ["a"],
+                }
+            )
+            sources = [{"title": "来源", "excerpt": "正文"}]
+            client = FakeClient()
+            client.responses = [
+                '{"claims":[{"id":"c1","claim":"WMO发布预警","type":"institution"}],"search_queries":["WMO warning"]}',
+                '{"event_summary":"讨论热浪","verified_facts":[],"source_errors":[],"disputed_or_unverified":[],"do_not_assert":[],"verification_status":"passed"}',
+            ]
+
+            with patch("economics_daily.pipeline.search_queries") as search_mock:
+                search_mock.return_value = [{"query": "WMO warning", "results": [], "error": ""}]
+                brief = build_event_brief(cdir, topic, sources, client)  # type: ignore[arg-type]
+
+            self.assertEqual(brief["verification_status"], "risky")
+            self.assertTrue((cdir / "claims.json").exists())
+            self.assertTrue((cdir / "search_evidence.json").exists())
+            self.assertTrue((cdir / "event_brief.json").exists())
+
     def test_render_home_lists_daily_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "data"
@@ -209,13 +242,11 @@ class PipelineTest(unittest.TestCase):
             )
             (cdir / "sources.json").write_text("[]", encoding="utf-8")
             with (
-                patch("economics_daily.pipeline.deepseek_client") as client,
-                patch("economics_daily.pipeline.write_cover") as write_cover_mock,
+                patch("economics_daily.pipeline.write_candidate_content") as write_content,
             ):
-                client.return_value.complete.return_value = "正文"
                 rewrite_candidate(cdir)
 
-        write_cover_mock.assert_called_once_with(cdir / "cover.png", "标题", footer="外部性与责任归属")
+        write_content.assert_called_once()
 
     def test_builds_wechat_draft_payload_from_candidate_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

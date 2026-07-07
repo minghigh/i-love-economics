@@ -15,8 +15,9 @@ from .articles import load_articles
 from .io import read_json, read_text, run_dir, write_json, write_text
 from .llm import ChatClient, deepseek_client, local_client, parse_json_response, prompt
 from .models import SourceArticle, Topic
+from .search import search_queries
 
-AI_DISCLOSURE = "本文由 AI 辅助生成，用于经济学学习与讨论；事实信息以参考来源为准。"
+AI_DISCLOSURE = "本文由 AI 辅助生成，用于经济学学习与讨论；事实表述经检索核实，经济学分析供参考。"
 
 
 def article_payload(articles: Iterable[SourceArticle], max_chars: int = 1200) -> list[dict]:
@@ -130,24 +131,76 @@ def sources_for(topic: Topic, articles: list[SourceArticle]) -> list[dict]:
     ]
 
 
-def write_candidate(base: Path, index: int, topic: Topic, sources: list[dict], client: ChatClient) -> None:
-    cdir = base / "candidates" / f"{index:02d}"
-    cdir.mkdir(parents=True, exist_ok=True)
-    write_json(cdir / "topic.json", topic.to_json())
-    write_json(cdir / "sources.json", sources)
-    article_prompt = prompt("03_write_wechat_article.md", selected_topic=topic.to_json(), sources=sources)
+def build_event_brief(cdir: Path, topic: Topic, sources: list[dict], client: ChatClient) -> dict:
+    claims_prompt = prompt("07_extract_claims.md", selected_topic=topic.to_json(), sources=sources)
+    try:
+        claims = parse_json_response(client.complete(claims_prompt, temperature=0))
+    except Exception as exc:  # noqa: BLE001
+        claims = {"claims": [], "search_queries": [], "error": str(exc)}
+    write_json(cdir / "claims.json", claims)
+
+    queries = claims.get("search_queries", []) if isinstance(claims, dict) else []
+    if not isinstance(queries, list):
+        queries = []
+    search_evidence = search_queries([str(item) for item in queries])
+    write_json(cdir / "search_evidence.json", search_evidence)
+
+    verify_prompt = prompt(
+        "08_verify_claims_with_search.md",
+        claims=claims,
+        search_evidence=search_evidence,
+        sources=sources,
+    )
+    try:
+        event_brief = parse_json_response(client.complete(verify_prompt, temperature=0))
+    except Exception as exc:  # noqa: BLE001
+        event_brief = {
+            "event_summary": "",
+            "verified_facts": [],
+            "source_errors": [],
+            "disputed_or_unverified": [],
+            "do_not_assert": [],
+            "verification_status": "failed",
+            "error": str(exc),
+        }
+    if event_brief.get("verification_status") == "passed":
+        if not search_evidence or all(not item.get("results") for item in search_evidence):
+            event_brief["verification_status"] = "risky"
+    write_json(cdir / "event_brief.json", event_brief)
+    return event_brief
+
+
+def post_write_fact_check(article: str, event_brief: dict, client: ChatClient) -> dict:
+    check_prompt = prompt("06_fact_check_article.md", article=article, event_brief=event_brief)
+    try:
+        return parse_json_response(client.complete(check_prompt, temperature=0))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "failed", "issues": [{"claim": "", "problem": str(exc), "suggestion": "人工检查"}]}
+
+
+def write_candidate_content(cdir: Path, topic: Topic, sources: list[dict], client: ChatClient) -> None:
+    event_brief = build_event_brief(cdir, topic, sources, client)
+    article_prompt = prompt(
+        "03_write_wechat_article.md",
+        selected_topic=topic.to_json(),
+        event_brief=event_brief,
+        sources=sources,
+    )
     article = client.complete(article_prompt, temperature=0.6)
     write_text(cdir / "article.md", article)
     write_text(cdir / "article.html", render_wechat_html(article))
     write_cover(cdir / "cover.png", topic.title, footer=topic.core_concept)
     card_prompt = prompt("04_make_knowledge_card.md", article=article, selected_topic=topic.to_json(), sources=sources)
     write_text(cdir / "knowledge-card.patch.md", client.complete(card_prompt, temperature=0.2))
-    check_prompt = prompt("06_fact_check_article.md", article=article, sources=sources)
-    try:
-        fact_check = parse_json_response(client.complete(check_prompt, temperature=0))
-    except Exception as exc:  # noqa: BLE001
-        fact_check = {"status": "failed", "issues": [{"claim": "", "problem": str(exc), "suggestion": "人工检查"}]}
-    write_json(cdir / "fact_check.json", fact_check)
+    write_json(cdir / "fact_check.json", post_write_fact_check(article, event_brief, client))
+
+
+def write_candidate(base: Path, index: int, topic: Topic, sources: list[dict], client: ChatClient) -> None:
+    cdir = base / "candidates" / f"{index:02d}"
+    cdir.mkdir(parents=True, exist_ok=True)
+    write_json(cdir / "topic.json", topic.to_json())
+    write_json(cdir / "sources.json", sources)
+    write_candidate_content(cdir, topic, sources, client)
 
 
 def render_wechat_html(markdown: str) -> str:
@@ -273,28 +326,43 @@ def fit_cover_title(draw: ImageDraw.ImageDraw, title: str, font_path: str, max_w
     return font, wrap_title_pixels(draw, title, font, max_width, 4)
 
 
+def format_brief_errors(event_brief: dict) -> str:
+    errors = event_brief.get("source_errors") or []
+    items = []
+    for item in errors:
+        if not isinstance(item, dict):
+            continue
+        source_claim = html.escape(str(item.get("source_claim") or ""))
+        correction = html.escape(str(item.get("correction") or ""))
+        items.append(f"<li><b>原文</b> {source_claim} → <b>纠正</b> {correction}</li>")
+    return "".join(items)
+
+
 def render_index(base: Path) -> None:
     candidates = []
     for cdir in sorted((base / "candidates").glob("*")):
         topic = read_json(cdir / "topic.json")
         check = read_json(cdir / "fact_check.json")
         sources = read_json(cdir / "sources.json")
-        status = check.get("status") or ("passed" if check.get("ok") else "risky")
-        candidates.append((cdir.name, topic, status, sources, check))
+        event_brief = read_json(cdir / "event_brief.json") if (cdir / "event_brief.json").exists() else {}
+        brief_status = str(event_brief.get("verification_status") or "unknown")
+        article_status = str(check.get("status") or ("passed" if check.get("ok") else "risky"))
+        candidates.append((cdir.name, topic, brief_status, article_status, sources, check, event_brief))
     rows = []
-    for name, topic, status, sources, check in candidates:
+    for name, topic, brief_status, article_status, sources, check, event_brief in candidates:
         issues = check.get("issues") or []
         issue_html = "".join(f"<li>{html.escape(str(item))}</li>" for item in issues)
+        brief_error_html = format_brief_errors(event_brief)
         rows.append(
             f"""
             <article class="card">
               <img src="candidates/{name}/cover.png" alt="cover">
               <h2>{html.escape(topic["title"])}</h2>
-              <p><b>分数</b> {topic["score"]} · <b>概念</b> {html.escape(topic["core_concept"])} · <b>事实校验</b> <span class="{status}">{status}</span></p>
+              <p><b>分数</b> {topic["score"]} · <b>概念</b> {html.escape(topic["core_concept"])} · <b>事实底稿</b> <span class="{brief_status}">{brief_status}</span> · <b>文章校验</b> <span class="{article_status}">{article_status}</span></p>
               <p>{html.escape(topic["economic_question"])}</p>
               <p><b>来源</b> {"; ".join(html.escape(s["title"]) for s in sources)}</p>
-              <p><a href="candidates/{name}/article.html">article.html</a> · <a href="candidates/{name}/article.md">article.md</a></p>
-              <ul>{issue_html}</ul>
+              <p><a href="candidates/{name}/article.html">article.html</a> · <a href="candidates/{name}/article.md">article.md</a> · <a href="candidates/{name}/event_brief.json">event_brief.json</a></p>
+              <ul>{brief_error_html}{issue_html}</ul>
             </article>
             """
         )
@@ -385,17 +453,21 @@ def run_daily(target_date: date, force: bool, limit: int) -> None:
     render_home()
 
 
+def backup_candidate_files(candidate_dir: Path, names: list[str]) -> None:
+    for name in names:
+        path = candidate_dir / name
+        if path.exists():
+            path.replace(candidate_dir / f"{path.stem}.prev{path.suffix}")
+
+
 def rewrite_candidate(candidate_dir: Path) -> None:
     topic = validate_topic(read_json(candidate_dir / "topic.json"))
     sources = read_json(candidate_dir / "sources.json")
-    for name in ["article.md", "article.html"]:
-        path = candidate_dir / name
-        if path.exists():
-            path.replace(candidate_dir / name.replace("article.", "article.prev."))
-    article = deepseek_client().complete(prompt("03_write_wechat_article.md", selected_topic=topic.to_json(), sources=sources), temperature=0.6)
-    write_text(candidate_dir / "article.md", article)
-    write_text(candidate_dir / "article.html", render_wechat_html(article))
-    write_cover(candidate_dir / "cover.png", topic.title, footer=topic.core_concept)
+    backup_candidate_files(
+        candidate_dir,
+        ["article.md", "article.html", "claims.json", "search_evidence.json", "event_brief.json", "fact_check.json"],
+    )
+    write_candidate_content(candidate_dir, topic, sources, deepseek_client())
 
 
 def apply_card(candidate_dir: Path) -> Path:

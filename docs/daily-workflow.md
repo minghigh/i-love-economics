@@ -32,6 +32,9 @@ data/runs/YYYY-MM-DD/
       article.html
       cover.png
       sources.json
+      claims.json
+      search_evidence.json
+      event_brief.json
       fact_check.json
       knowledge-card.patch.md
     02/
@@ -39,6 +42,9 @@ data/runs/YYYY-MM-DD/
       article.html
       cover.png
       sources.json
+      claims.json
+      search_evidence.json
+      event_brief.json
       fact_check.json
       knowledge-card.patch.md
   rejected_topics.json
@@ -59,7 +65,7 @@ Use it to review:
 - Score.
 - Core economics question.
 - Core concept.
-- Fact-check status.
+- Fact-check status (`event_brief.json` verification + `fact_check.json` article check).
 - Cover image.
 - Source list.
 - Links to `article.html` and `article.md`.
