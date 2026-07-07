@@ -25,9 +25,11 @@ class Topic:
     reason: str
     source_ids: list[str]
     related_concepts: list[str] = field(default_factory=list)
+    reader_score: int | None = None
+    reader_note: str = ""
 
     def to_json(self) -> dict:
-        return {
+        data = {
             "title": self.title,
             "pass": self.pass_,
             "score": self.score,
@@ -37,3 +39,8 @@ class Topic:
             "source_ids": self.source_ids,
             "related_concepts": self.related_concepts,
         }
+        if self.reader_score is not None:
+            data["reader_score"] = self.reader_score
+        if self.reader_note:
+            data["reader_note"] = self.reader_note
+        return data

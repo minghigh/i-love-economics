@@ -151,6 +151,37 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual([topic.title for topic in selected], [topics[0].title, topics[2].title])
         self.assertEqual([topic.title for topic in rejected], [topics[1].title])
 
+    def test_select_topics_prefers_reader_appeal_when_mechanism_equal(self) -> None:
+        topics = [
+            validate_topic(
+                {
+                    "title": "地缘议题",
+                    "pass": True,
+                    "score": 9,
+                    "economic_question": "国家如何在战略威慑中权衡成本？",
+                    "core_concept": "博弈论",
+                    "reason": "机制完整",
+                    "source_ids": ["a"],
+                    "reader_score": 6,
+                }
+            ),
+            validate_topic(
+                {
+                    "title": "外卖涨价",
+                    "pass": True,
+                    "score": 9,
+                    "economic_question": "外卖平台涨价时，消费者为什么不直接换一家？",
+                    "core_concept": "转换成本",
+                    "reason": "贴近生活",
+                    "source_ids": ["b"],
+                    "reader_score": 9,
+                }
+            ),
+        ]
+        selected, rejected = select_topics(topics, 1)
+        self.assertEqual([topic.title for topic in selected], ["外卖涨价"])
+        self.assertEqual(len(rejected), 1)
+
     def test_select_topics_rejects_weak_topics_instead_of_filling_quota(self) -> None:
         topics = [
             validate_topic(

@@ -39,6 +39,7 @@ def validate_topic(raw: dict) -> Topic:
     missing = [key for key in required if key not in raw]
     if missing:
         raise ValueError(f"topic missing fields: {', '.join(missing)}")
+    reader_score = raw.get("reader_score")
     return Topic(
         title=str(raw["title"]),
         pass_=bool(raw["pass"]),
@@ -48,6 +49,8 @@ def validate_topic(raw: dict) -> Topic:
         reason=str(raw["reason"]),
         source_ids=[str(item) for item in raw["source_ids"]],
         related_concepts=[str(item) for item in raw.get("related_concepts", [])],
+        reader_score=max(1, min(10, int(reader_score))) if reader_score is not None else None,
+        reader_note=str(raw.get("reader_note") or ""),
     )
 
 
@@ -131,11 +134,70 @@ def _rank_batch(topics: list[Topic], client: ChatClient) -> list[Topic]:
     return ranked
 
 
+def _topic_key(topic: Topic) -> str:
+    return ",".join(topic.source_ids)
+
+
+def score_reader_appeal(topics: list[Topic], client: ChatClient) -> list[Topic]:
+    candidates = [topic for topic in topics if topic.pass_]
+    if not candidates:
+        return topics
+    batch_size = int(os.environ.get("APPEAL_BATCH_SIZE", "40"))
+    appeal_by_key: dict[str, tuple[int, str]] = {}
+    for start in range(0, len(candidates), batch_size):
+        chunk = candidates[start : start + batch_size]
+        body = prompt("02_score_reader_appeal.md", topics_json=[topic.to_json() for topic in chunk])
+        try:
+            raw = parse_json_response(client.complete(body))
+            items = raw.get("topics", raw) if isinstance(raw, dict) else raw
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                key = ",".join(str(value) for value in item.get("source_ids", []))
+                if not key or item.get("reader_score") is None:
+                    continue
+                appeal_by_key[key] = (max(1, min(10, int(item["reader_score"]))), str(item.get("reader_note") or ""))
+        except Exception:
+            continue
+    merged: list[Topic] = []
+    for topic in topics:
+        appeal = appeal_by_key.get(_topic_key(topic))
+        if appeal is None:
+            merged.append(topic)
+            continue
+        merged.append(
+            Topic(
+                topic.title,
+                topic.pass_,
+                topic.score,
+                topic.economic_question,
+                topic.core_concept,
+                topic.reason,
+                topic.source_ids,
+                topic.related_concepts,
+                reader_score=appeal[0],
+                reader_note=appeal[1],
+            )
+        )
+    return merged
+
+
+def reader_ok(topic: Topic) -> bool:
+    if topic.reader_score is None:
+        return True
+    return topic.reader_score >= int(os.environ.get("MIN_READER_SCORE", "8"))
+
+
+def select_sort_key(topic: Topic) -> tuple[int, int]:
+    reader = topic.reader_score if topic.reader_score is not None else 0
+    return (reader, topic.score)
+
+
 def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[Topic]]:
     min_score = int(os.environ.get("MIN_TOPIC_SCORE", "9"))
-    passed = [topic for topic in topics if topic.pass_ and topic.score >= min_score]
-    rejected = [topic for topic in topics if not topic.pass_ or topic.score < min_score]
-    passed.sort(key=lambda topic: topic.score, reverse=True)
+    passed = [topic for topic in topics if topic.pass_ and topic.score >= min_score and reader_ok(topic)]
+    rejected = [topic for topic in topics if topic not in passed]
+    passed.sort(key=select_sort_key, reverse=True)
     selected: list[Topic] = []
     for topic in passed:
         if any(is_duplicate_topic(topic, item) for item in selected):
@@ -150,7 +212,11 @@ def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[To
 def topic_status(topic: dict, selected_titles: set[str]) -> str:
     if topic["title"] in selected_titles:
         return "selected"
-    if topic.get("pass") and int(topic.get("score", 0)) >= int(os.environ.get("MIN_TOPIC_SCORE", "9")):
+    min_score = int(os.environ.get("MIN_TOPIC_SCORE", "9"))
+    min_reader = int(os.environ.get("MIN_READER_SCORE", "8"))
+    reader_score = topic.get("reader_score")
+    reader_ok = reader_score is None or int(reader_score) >= min_reader
+    if topic.get("pass") and int(topic.get("score", 0)) >= min_score and reader_ok:
         return "backup"
     return "rejected"
 
@@ -164,27 +230,40 @@ def render_topics_review(base: Path) -> None:
     if not isinstance(ranked, list):
         ranked = []
 
-    items = sorted(ranked, key=lambda item: (-int(item.get("score", 0)), str(item.get("title", ""))))
+    items = sorted(
+        ranked,
+        key=lambda item: (
+            -int(item.get("reader_score") or 0),
+            -int(item.get("score", 0)),
+            str(item.get("title", "")),
+        ),
+    )
     passed = [item for item in items if item.get("pass")]
     score9 = sum(1 for item in passed if int(item.get("score", 0)) >= 9)
     score8 = sum(1 for item in passed if int(item.get("score", 0)) == 8)
+    reader9 = sum(1 for item in passed if int(item.get("reader_score") or 0) >= 9)
 
     rows = []
     for item in items:
         title = str(item.get("title", "未命名"))
         score = int(item.get("score", 0))
+        reader_score = item.get("reader_score")
+        reader_display = str(reader_score) if reader_score is not None else "—"
         status = topic_status(item, selected_titles)
         status_label = {"selected": "已选", "backup": "备选", "rejected": "未选"}.get(status, "未选")
         row_class = status
+        reader_note = html.escape(str(item.get("reader_note") or ""))
         rows.append(
             f"""
             <tr class="{row_class}">
               <td>{score}</td>
+              <td>{reader_display}</td>
               <td>{"是" if item.get("pass") else "否"}</td>
               <td><span class="tag {status}">{status_label}</span></td>
               <td>{html.escape(title)}</td>
               <td>{html.escape(str(item.get("core_concept", "")))}</td>
               <td>{html.escape(str(item.get("economic_question", "")))}</td>
+              <td class="note">{reader_note}</td>
             </tr>
             """
         )
@@ -205,20 +284,21 @@ tr.rejected{{color:#666}}
 .tag.selected{{background:#dcfce7;color:#166534}}
 .tag.backup{{background:#fef3c7;color:#92400e}}
 .tag.rejected{{background:#f3f4f6;color:#6b7280}}
+.note{{color:#666;font-size:13px;max-width:220px}}
 a{{color:#2563eb}}
 </style>
 <p><a href="index.html">← 返回候选文章</a></p>
 <h1>选题评分 · {html.escape(base.name)}</h1>
 <div class="meta">
-  <p><b>合计</b> {len(items)} 个选题 · <b>pass</b> {len(passed)} · <b>9分+</b> {score9} · <b>8分</b> {score8} · <b>已生成文章</b> {len(selected)}</p>
-  <p>评分经过严格重排；只有「已选」的 {len(selected)} 篇会生成候选文章。</p>
+  <p><b>合计</b> {len(items)} 个选题 · <b>pass</b> {len(passed)} · <b>机制9分+</b> {score9} · <b>机制8分</b> {score8} · <b>读者9分+</b> {reader9} · <b>已生成文章</b> {len(selected)}</p>
+  <p>先按机制质量筛选，再按<b>读者吸引力</b>（贴近生活、热点、有趣）选前 {len(selected)} 篇。</p>
 </div>
 <table>
   <thead>
-    <tr><th>分数</th><th>pass</th><th>状态</th><th>标题</th><th>概念</th><th>经济学问题</th></tr>
+    <tr><th>机制分</th><th>读者分</th><th>pass</th><th>状态</th><th>标题</th><th>概念</th><th>经济学问题</th><th>读者吸引力说明</th></tr>
   </thead>
   <tbody>
-    {"".join(rows) if rows else "<tr><td colspan='6'>暂无选题数据</td></tr>"}
+    {"".join(rows) if rows else "<tr><td colspan='8'>暂无选题数据</td></tr>"}
   </tbody>
 </table>
 """
@@ -561,6 +641,7 @@ def run_daily(target_date: date, force: bool, limit: int) -> None:
         screened = screen_articles(articles, local_client())
         grouped = group_topics(dedupe_topics(screened), local_client())
         ranked = rank_topics(grouped, local_client())
+        ranked = score_reader_appeal(ranked, local_client())
     except Exception as exc:  # noqa: BLE001
         write_json(base / "screening.json", {"error": str(exc), "topics": []})
         render_index(base)
