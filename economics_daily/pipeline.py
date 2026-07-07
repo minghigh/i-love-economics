@@ -87,10 +87,54 @@ def group_topics(topics: list[Topic], client: ChatClient) -> list[Topic]:
         return passed
 
 
+def dedupe_topics(topics: list[Topic]) -> list[Topic]:
+    kept: list[Topic] = []
+    for topic in topics:
+        replaced = False
+        for index, item in enumerate(kept):
+            if is_duplicate_topic(topic, item):
+                if topic.score > item.score:
+                    kept[index] = topic
+                replaced = True
+                break
+        if not replaced:
+            kept.append(topic)
+    return kept
+
+
+def rank_topics(topics: list[Topic], client: ChatClient) -> list[Topic]:
+    if not topics:
+        return []
+    batch_size = int(os.environ.get("RANK_BATCH_SIZE", "50"))
+    deduped = dedupe_topics(topics)
+    if len(deduped) <= batch_size:
+        return _rank_batch(deduped, client)
+    survivors: list[Topic] = []
+    for start in range(0, len(deduped), batch_size):
+        survivors.extend(topic for topic in _rank_batch(deduped[start : start + batch_size], client) if topic.pass_)
+    return dedupe_topics(survivors)
+
+
+def _rank_batch(topics: list[Topic], client: ChatClient) -> list[Topic]:
+    body = prompt("02_rank_topics.md", topics_json=[topic.to_json() for topic in topics])
+    try:
+        raw = parse_json_response(client.complete(body))
+        items = raw.get("topics", raw) if isinstance(raw, dict) else raw
+        ranked = [validate_topic(item) for item in items]
+    except Exception:
+        return topics
+    ranked_ids = {",".join(topic.source_ids) for topic in ranked}
+    for topic in topics:
+        key = ",".join(topic.source_ids)
+        if key not in ranked_ids:
+            ranked.append(Topic(topic.title, False, min(topic.score, 6), topic.economic_question, topic.core_concept, topic.reason, topic.source_ids, topic.related_concepts))
+    return ranked
+
+
 def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[Topic]]:
-    min_score = int(os.environ.get("MIN_TOPIC_SCORE", "8"))
+    min_score = int(os.environ.get("MIN_TOPIC_SCORE", "9"))
     passed = [topic for topic in topics if topic.pass_ and topic.score >= min_score]
-    rejected = [topic for topic in topics if topic.pass_ and topic.score < min_score]
+    rejected = [topic for topic in topics if not topic.pass_ or topic.score < min_score]
     passed.sort(key=lambda topic: topic.score, reverse=True)
     selected: list[Topic] = []
     for topic in passed:
@@ -101,6 +145,84 @@ def select_topics(topics: list[Topic], limit: int) -> tuple[list[Topic], list[To
         else:
             rejected.append(topic)
     return selected, rejected
+
+
+def topic_status(topic: dict, selected_titles: set[str]) -> str:
+    if topic["title"] in selected_titles:
+        return "selected"
+    if topic.get("pass") and int(topic.get("score", 0)) >= int(os.environ.get("MIN_TOPIC_SCORE", "9")):
+        return "backup"
+    return "rejected"
+
+
+def render_topics_review(base: Path) -> None:
+    ranked = read_json(base / "ranked.json") if (base / "ranked.json").exists() else []
+    if not ranked and (base / "screening.json").exists():
+        ranked = read_json(base / "screening.json")
+    selected = read_json(base / "topics.json") if (base / "topics.json").exists() else []
+    selected_titles = {str(topic.get("title", "")) for topic in selected}
+    if not isinstance(ranked, list):
+        ranked = []
+
+    items = sorted(ranked, key=lambda item: (-int(item.get("score", 0)), str(item.get("title", ""))))
+    passed = [item for item in items if item.get("pass")]
+    score9 = sum(1 for item in passed if int(item.get("score", 0)) >= 9)
+    score8 = sum(1 for item in passed if int(item.get("score", 0)) == 8)
+
+    rows = []
+    for item in items:
+        title = str(item.get("title", "未命名"))
+        score = int(item.get("score", 0))
+        status = topic_status(item, selected_titles)
+        status_label = {"selected": "已选", "backup": "备选", "rejected": "未选"}.get(status, "未选")
+        row_class = status
+        rows.append(
+            f"""
+            <tr class="{row_class}">
+              <td>{score}</td>
+              <td>{"是" if item.get("pass") else "否"}</td>
+              <td><span class="tag {status}">{status_label}</span></td>
+              <td>{html.escape(title)}</td>
+              <td>{html.escape(str(item.get("core_concept", "")))}</td>
+              <td>{html.escape(str(item.get("economic_question", "")))}</td>
+            </tr>
+            """
+        )
+
+    page = f"""<!doctype html>
+<meta charset="utf-8">
+<title>选题评分 - {html.escape(base.name)}</title>
+<style>
+body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:32px;line-height:1.6;color:#222;background:#fafafa}}
+.meta{{background:white;border:1px solid #ddd;border-radius:8px;padding:18px;margin:0 0 18px;max-width:1200px}}
+table{{width:100%;max-width:1200px;border-collapse:collapse;background:white;border:1px solid #ddd}}
+th,td{{border-bottom:1px solid #eee;padding:10px 12px;text-align:left;vertical-align:top;font-size:14px}}
+th{{background:#f8fafc;position:sticky;top:0}}
+tr.selected{{background:#ecfdf5}}
+tr.backup{{background:#fffbeb}}
+tr.rejected{{color:#666}}
+.tag{{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}}
+.tag.selected{{background:#dcfce7;color:#166534}}
+.tag.backup{{background:#fef3c7;color:#92400e}}
+.tag.rejected{{background:#f3f4f6;color:#6b7280}}
+a{{color:#2563eb}}
+</style>
+<p><a href="index.html">← 返回候选文章</a></p>
+<h1>选题评分 · {html.escape(base.name)}</h1>
+<div class="meta">
+  <p><b>合计</b> {len(items)} 个选题 · <b>pass</b> {len(passed)} · <b>9分+</b> {score9} · <b>8分</b> {score8} · <b>已生成文章</b> {len(selected)}</p>
+  <p>评分经过严格重排；只有「已选」的 {len(selected)} 篇会生成候选文章。</p>
+</div>
+<table>
+  <thead>
+    <tr><th>分数</th><th>pass</th><th>状态</th><th>标题</th><th>概念</th><th>经济学问题</th></tr>
+  </thead>
+  <tbody>
+    {"".join(rows) if rows else "<tr><td colspan='6'>暂无选题数据</td></tr>"}
+  </tbody>
+</table>
+"""
+    write_text(base / "topics.html", page)
 
 
 def is_duplicate_topic(left: Topic, right: Topic) -> bool:
@@ -339,6 +461,7 @@ def format_brief_errors(event_brief: dict) -> str:
 
 
 def render_index(base: Path) -> None:
+    ranked_count = len(read_json(base / "ranked.json")) if (base / "ranked.json").exists() else 0
     candidates = []
     for cdir in sorted((base / "candidates").glob("*")):
         topic = read_json(cdir / "topic.json")
@@ -377,6 +500,7 @@ img{{width:260px;max-width:100%;display:block;border:1px solid #eee}}
 a{{color:#2563eb}}
 </style>
 <h1>用经济学看昨天</h1>
+<p><a href="topics.html">查看全部选题评分（{ranked_count} 个）</a></p>
 {"".join(rows) if rows else "<p>今天没有生成候选文章。</p>"}
 """
     write_text(base / "index.html", page)
@@ -435,19 +559,24 @@ def run_daily(target_date: date, force: bool, limit: int) -> None:
     log_lines = [f"loaded {len(articles)} articles"]
     try:
         screened = screen_articles(articles, local_client())
-        grouped = group_topics(screened, local_client())
+        grouped = group_topics(dedupe_topics(screened), local_client())
+        ranked = rank_topics(grouped, local_client())
     except Exception as exc:  # noqa: BLE001
         write_json(base / "screening.json", {"error": str(exc), "topics": []})
         render_index(base)
+        render_topics_review(base)
         render_home()
         return
-    selected, rejected = select_topics(grouped, limit)
+    selected, rejected = select_topics(ranked, limit)
     write_json(base / "screening.json", [topic.to_json() for topic in screened])
+    write_json(base / "grouped.json", [topic.to_json() for topic in grouped])
+    write_json(base / "ranked.json", [topic.to_json() for topic in ranked])
     write_json(base / "topics.json", [topic.to_json() for topic in selected])
     write_json(base / "rejected_topics.json", [topic.to_json() for topic in rejected])
     for i, topic in enumerate(selected, start=1):
         write_candidate(base, i, topic, sources_for(topic, articles), deepseek_client())
     render_index(base)
+    render_topics_review(base)
     log_lines.append(f"generated {len(selected)} candidates")
     write_text(base / "run.log", "\n".join(log_lines) + "\n")
     render_home()

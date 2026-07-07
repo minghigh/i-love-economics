@@ -157,7 +157,7 @@ class PipelineTest(unittest.TestCase):
                 {
                     "title": "有细节的强选题",
                     "pass": True,
-                    "score": 8,
+                    "score": 9,
                     "economic_question": "为什么值得写？",
                     "core_concept": "激励",
                     "reason": "有机制",
@@ -168,7 +168,7 @@ class PipelineTest(unittest.TestCase):
                 {
                     "title": "只有常识短评的弱选题",
                     "pass": True,
-                    "score": 7,
+                    "score": 8,
                     "economic_question": "为什么不够？",
                     "core_concept": "成本",
                     "reason": "事实细节不足",

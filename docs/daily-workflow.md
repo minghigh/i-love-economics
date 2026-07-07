@@ -25,6 +25,7 @@ Each run writes to:
 data/runs/YYYY-MM-DD/
   index.html
   screening.json
+  ranked.json
   topics.json
   candidates/
     01/
