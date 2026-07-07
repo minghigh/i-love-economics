@@ -140,5 +140,5 @@ Every day, the user decides:
 The system decides:
 
 - Which yesterday articles are worth screening.
-- Which topics become up to 3 complete candidates.
+- Which topics become up to 5 complete candidates.
 - Which extra topics remain as rejected or backup summaries.

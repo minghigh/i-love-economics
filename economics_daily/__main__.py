@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser = sub.add_parser("daily")
     daily_parser.add_argument("--date", default="yesterday")
     daily_parser.add_argument("--force", action="store_true")
-    daily_parser.add_argument("--limit", type=int, default=3)
+    daily_parser.add_argument("--limit", type=int, default=5)
 
     rewrite_parser = sub.add_parser("rewrite")
     rewrite_parser.add_argument("candidate_dir")

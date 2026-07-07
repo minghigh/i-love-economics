@@ -13,7 +13,7 @@ The first version is not a course, LMS, database product, or web app. It is a da
 - Review articles published yesterday, based on Beijing time.
 - Select events that can be explained clearly through economics.
 - If no event is good enough, output nothing.
-- Generate up to 3 complete candidate articles per day.
+- Generate up to 5 complete candidate articles per day.
 - Extra good-but-not-top-3 topics go into a rejected/candidate summary, not full drafts.
 
 ## Topic Rules
